@@ -1280,6 +1280,7 @@ do_statfs (char const *filename, char const *format)
 struct print_args {
   struct stat *st;
   struct timespec btime;
+  struct timespec ptime;
 };
 
 /* Ask statx to avoid syncing? */
@@ -1325,6 +1326,9 @@ fmt_to_mask (char fmt)
       return STATX_MODE;
     case 'b':
       return STATX_BLOCKS;
+    case 'p':
+    case 'P':
+      return STATX_PTIME;
     case 'w':
     case 'W':
       return STATX_BTIME;
@@ -1373,6 +1377,7 @@ do_stat (char const *filename, char const *format, char const *format2)
   struct print_args pa;
   pa.st = &st;
   pa.btime = (struct timespec) {.tv_sec = -1, .tv_nsec = -1};
+  pa.ptime = (struct timespec) {.tv_sec = -1, .tv_nsec = -1};
 
   if (AT_FDCWD != fd)
     {
@@ -1408,6 +1413,8 @@ do_stat (char const *filename, char const *format, char const *format2)
   statx_to_stat (&stx, &st);
   if (stx.stx_mask & STATX_BTIME)
     pa.btime = statx_timestamp_to_timespec (stx.stx_btime);
+  if (stx.stx_mask & STATX_PTIME)
+    pa.ptime = statx_timestamp_to_timespec (statx_get_ptime (&stx));
 
   bool fail = print_it (format, fd, filename, print_stat, &pa);
   return ! fail;
@@ -1459,6 +1466,7 @@ do_stat (char const *filename, char const *format,
   struct print_args pa;
   pa.st = &statbuf;
   pa.btime = (struct timespec) {.tv_sec = -1, .tv_nsec = -1};
+  pa.ptime = (struct timespec) {.tv_sec = -1, .tv_nsec = -1};
 
   if (0 <= fd)
     {
@@ -1504,6 +1512,7 @@ print_stat (char *pformat, size_t prefix_len, char mod, char m,
   struct print_args *parg = (struct print_args *) data;
   struct stat *statbuf = parg->st;
   struct timespec btime = parg->btime;
+  struct timespec ptime = parg->ptime;
   struct passwd *pw_ent;
   struct group *gw_ent;
   bool fail = false;
@@ -1611,6 +1620,19 @@ print_stat (char *pformat, size_t prefix_len, char mod, char m,
       break;
     case 'o':
       out_uint (pformat, prefix_len, STP_BLKSIZE (statbuf));
+      break;
+    case 'p':
+      {
+        if (ptime.tv_nsec < 0)
+          out_string (pformat, prefix_len, "-");
+        else
+          out_string (pformat, prefix_len, human_time (ptime));
+      }
+      break;
+    case 'P':
+      {
+        out_epoch_sec (pformat, prefix_len, neg_to_zero (ptime));
+      }
       break;
     case 'w':
       {
@@ -1743,7 +1765,8 @@ default_format (bool fs, bool terse, bool device)
                               _("Access: %x\n"
                                 "Modify: %y\n"
                                 "Change: %z\n"
-                                " Birth: %w\n"));
+                                " Birth: %w\n"
+                                "Origin: %p\n"));
           free (temp);
         }
     }
@@ -1840,6 +1863,8 @@ The valid format sequences for files (without --file-system):\n\
       fputs (_("\
   %u   user ID of owner\n\
   %U   user name of owner\n\
+  %p   time of file provenance, human-readable; - if unknown\n\
+  %P   time of file provenance, seconds since Epoch; 0 if unknown\n\
   %w   time of file birth, human-readable; - if unknown\n\
   %W   time of file birth, seconds since Epoch; 0 if unknown\n\
   %x   time of last access, human-readable\n\

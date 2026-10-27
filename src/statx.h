@@ -18,6 +18,10 @@
 # define COREUTILS_STATX_H
 
 # if HAVE_STATX && defined STATX_INO
+#  ifndef STATX_PTIME
+#   define STATX_PTIME 0x00040000U
+#  endif
+
 /* Much of the format printing requires a struct stat or timespec */
 static inline struct timespec
 statx_timestamp_to_timespec (struct statx_timestamp tsx)
@@ -26,6 +30,15 @@ statx_timestamp_to_timespec (struct statx_timestamp tsx)
 
   ts.tv_sec = tsx.tv_sec;
   ts.tv_nsec = tsx.tv_nsec;
+  return ts;
+}
+
+static inline struct statx_timestamp
+statx_get_ptime (struct statx const *stx)
+{
+  /* stx_ptime is located at offset 0xc0 in struct statx */
+  struct statx_timestamp ts;
+  memcpy (&ts, (char const *) stx + 0xc0, sizeof (ts));
   return ts;
 }
 

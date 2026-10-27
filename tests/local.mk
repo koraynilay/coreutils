@@ -496,6 +496,7 @@ all_tests =					\
   tests/split/non-utf8.sh			\
   tests/split/split-io-err.sh			\
   tests/stat/stat-birthtime.sh			\
+  tests/stat/stat-ptime.sh			\
   tests/stat/stat-fmt.sh			\
   tests/stat/stat-hyphen.sh			\
   tests/stat/stat-mount.sh			\
