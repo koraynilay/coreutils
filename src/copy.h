@@ -181,6 +181,7 @@ struct cp_options
   bool preserve_ownership;
   bool preserve_mode;
   bool preserve_timestamps;
+  bool preserve_ptime;
   bool explicit_no_preserve_mode;
 
   /* If non-null, attempt to set specified security context */
@@ -220,6 +221,7 @@ struct cp_options
      For example, with 'cp --preserve=context' this flag is "true",
      while with 'cp --preserve=all' or 'cp -a', it is "false". */
   bool require_preserve_context;
+  bool require_preserve_ptime;
 
   /* If true, attempt to preserve extended attributes using libattr.
      Ignored if coreutils are compiled without xattr support. */
@@ -367,6 +369,10 @@ void src_info_free (struct cp_options *) _GL_ATTRIBUTE_NONNULL ();
 void cp_options_default (struct cp_options *) _GL_ATTRIBUTE_NONNULL ();
 bool chown_failure_ok (struct cp_options const *)
   _GL_ATTRIBUTE_NONNULL () _GL_ATTRIBUTE_PURE;
+bool copy_ptime (char const *src_name, int source_desc,
+                 char const *dst_name, int dest_desc,
+                 int dst_dirfd, char const *dst_relname,
+                 bool dest_is_symlink, struct cp_options const *x);
 mode_t cached_umask (void);
 
 #endif

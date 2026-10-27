@@ -82,6 +82,11 @@
 # define FICLONE _IOW (0x94, 9, int)
 #endif
 
+#include "statx.h"
+#if HAVE_SYS_SYSCALL_H || defined __linux__
+# include <sys/syscall.h>
+#endif
+
 #if HAVE_FCLONEFILEAT && !USE_XATTR
 # include <sys/clonefile.h>
 #endif
@@ -354,6 +359,95 @@ copy_attr (MAYBE_UNUSED char const *src_path,
   return true;
 }
 #endif /* USE_XATTR */
+
+#ifndef FS_XFLAG_PTIME
+# define FS_XFLAG_PTIME 0x00100000
+#endif
+
+#ifndef __NR_file_setattr
+# if defined __x86_64__ || defined __i386__
+#  define __NR_file_setattr 469
+# elif defined __aarch64__ || defined __arm__
+#  define __NR_file_setattr 469
+# elif defined __riscv
+#  define __NR_file_setattr 469
+# endif
+#endif
+
+/* struct file_attr for file_setattr syscall */
+struct cp_file_attr {
+  uint32_t fa_xflags;
+  uint32_t fa_extsize;
+  uint32_t fa_nextents;
+  uint32_t fa_projid;
+  uint32_t fa_cowextsize;
+  int64_t  fa_ptime_sec;
+  uint32_t fa_ptime_nsec;
+  uint32_t fa_pad;
+};
+
+/* Copy provenance time (ptime) from source to destination.  */
+bool
+copy_ptime (char const *src_name, int source_desc,
+            char const *dst_name, int dest_desc,
+            int dst_dirfd, char const *dst_relname,
+            bool dest_is_symlink, struct cp_options const *x)
+{
+#if defined HAVE_STATX && defined STATX_INO && defined __NR_file_setattr
+  struct statx stx;
+  int sflags = (x->dereference == DEREF_NEVER ? AT_SYMLINK_NOFOLLOW : 0);
+  int sfd = (source_desc >= 0 ? source_desc : AT_FDCWD);
+  char const *sname = (source_desc >= 0 ? "" : src_name);
+  if (source_desc >= 0)
+    sflags |= AT_EMPTY_PATH;
+
+  if (statx (sfd, sname, sflags, STATX_PTIME | STATX_BTIME, &stx) != 0)
+    return true;
+
+  struct statx_timestamp tsx;
+  if (stx.stx_mask & STATX_PTIME)
+    tsx = statx_get_ptime (&stx);
+  else if (stx.stx_mask & STATX_BTIME)
+    tsx = stx.stx_btime;
+  else
+    return true;
+
+  struct cp_file_attr fattr;
+  memset (&fattr, 0, sizeof (fattr));
+  fattr.fa_xflags = FS_XFLAG_PTIME;
+  fattr.fa_ptime_sec = tsx.tv_sec;
+  fattr.fa_ptime_nsec = tsx.tv_nsec;
+  fattr.fa_pad = 0;
+
+#ifndef AT_EMPTY_PATH
+# define AT_EMPTY_PATH 0x1000
+#endif
+
+  int ret;
+  if (dest_desc >= 0)
+    ret = syscall (__NR_file_setattr, dest_desc, NULL, &fattr, sizeof (fattr),
+                   AT_EMPTY_PATH);
+  else
+    {
+      int at_flags = dest_is_symlink ? AT_SYMLINK_NOFOLLOW : 0;
+      ret = syscall (__NR_file_setattr, dst_dirfd, dst_relname, &fattr,
+                     sizeof (fattr), at_flags);
+    }
+
+  if (ret != 0)
+    {
+      if (errno == ENOSYS || errno == EOPNOTSUPP || errno == ENOTTY ||
+          errno == EINVAL)
+        return true;
+
+      error (0, errno, _("preserving provenance time for %s"),
+             quoteaf (dst_name));
+      if (x->require_preserve_ptime)
+        return false;
+    }
+#endif
+  return true;
+}
 
 /* Read the contents of the directory SRC_NAME_IN, and recursively
    copy the contents to DST_NAME_IN aka DST_DIRFD+DST_RELNAME_IN.
@@ -1051,6 +1145,19 @@ copy_reg (char const *src_name, char const *dst_name,
         {
           error (0, errno, _("preserving times for %s"), quoteaf (dst_name));
           if (x->require_preserve)
+            {
+              return_val = false;
+              goto close_src_and_dst_desc;
+            }
+        }
+    }
+
+  if (x->preserve_timestamps || x->preserve_ptime)
+    {
+      if (!copy_ptime (src_name, source_desc, dst_name, dest_desc,
+                       dst_dirfd, dst_relname, false, x))
+        {
+          if (x->require_preserve_ptime)
             {
               return_val = false;
               goto close_src_and_dst_desc;
@@ -2642,6 +2749,16 @@ skip:
         {
           error (0, errno, _("preserving times for %s"), quoteaf (dst_name));
           if (x->require_preserve)
+            return false;
+        }
+    }
+
+  if (x->preserve_timestamps || x->preserve_ptime)
+    {
+      if (!copy_ptime (src_name, -1, dst_name, -1,
+                       dst_dirfd, drelname, dest_is_symlink, x))
+        {
+          if (x->require_preserve_ptime)
             return false;
         }
     }

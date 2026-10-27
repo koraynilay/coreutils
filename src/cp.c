@@ -315,9 +315,9 @@ Copy SOURCE to DEST, or multiple SOURCE(s) to DIRECTORY.\n\
 \n\
 ATTR_LIST is a comma-separated list of attributes. Attributes are 'mode' for\n\
 permissions (including any ACL and xattr permissions), 'ownership' for user\n\
-and group, 'timestamps' for file timestamps, 'links' for hard links, 'context'\
-\nfor security context, 'xattr' for extended attributes, and 'all' for all\n\
-attributes.\n\
+and group, 'timestamps' for file timestamps, 'ptime' for provenance timestamp,\n\
+'links' for hard links, 'context' for security context, 'xattr' for extended\n\
+attributes, and 'all' for all attributes.\n\
 "), stdout);
       fputs (_("\
 \n\
@@ -400,7 +400,18 @@ re_protect (char const *const_dst_name, char const *dst_src_name,
             {
               error (0, errno, _("failed to preserve times for %s"),
                      quoteaf (dst_name));
-              return false;
+              if (x->require_preserve)
+                return false;
+            }
+        }
+
+      if (x->preserve_timestamps || x->preserve_ptime)
+        {
+          if (!copy_ptime (src_name, -1, dst_name, -1, dst_dirfd, relname,
+                           false, x))
+            {
+              if (x->require_preserve_ptime)
+                return false;
             }
         }
 
@@ -899,6 +910,8 @@ cp_option_init (struct cp_options *x)
   x->preserve_links = false;
   x->preserve_mode = false;
   x->preserve_timestamps = false;
+  x->preserve_ptime = false;
+  x->require_preserve_ptime = false;
   x->explicit_no_preserve_mode = false;
   x->preserve_security_context = false; /* -a or --preserve=context.  */
   x->require_preserve_context = false;  /* --preserve=context.  */
@@ -945,19 +958,20 @@ decode_preserve_arg (char const *arg, struct cp_options *x, bool on_off)
       PRESERVE_LINK,
       PRESERVE_CONTEXT,
       PRESERVE_XATTR,
-      PRESERVE_ALL
+      PRESERVE_ALL,
+      PRESERVE_PTIME
     };
   static enum File_attribute const preserve_vals[] =
     {
       PRESERVE_MODE, PRESERVE_TIMESTAMPS,
       PRESERVE_OWNERSHIP, PRESERVE_LINK, PRESERVE_CONTEXT, PRESERVE_XATTR,
-      PRESERVE_ALL
+      PRESERVE_ALL, PRESERVE_PTIME
     };
   /* Valid arguments to the '--preserve' option. */
   static char const *const preserve_args[] =
     {
       "mode", "timestamps",
-      "ownership", "links", "context", "xattr", "all", NULL
+      "ownership", "links", "context", "xattr", "all", "ptime", NULL
     };
   ARGMATCH_VERIFY (preserve_args, preserve_vals);
 
@@ -985,6 +999,12 @@ decode_preserve_arg (char const *arg, struct cp_options *x, bool on_off)
 
         case PRESERVE_TIMESTAMPS:
           x->preserve_timestamps = on_off;
+          x->preserve_ptime = on_off;
+          break;
+
+        case PRESERVE_PTIME:
+          x->preserve_ptime = on_off;
+          x->require_preserve_ptime = on_off;
           break;
 
         case PRESERVE_OWNERSHIP:
@@ -1008,6 +1028,7 @@ decode_preserve_arg (char const *arg, struct cp_options *x, bool on_off)
         case PRESERVE_ALL:
           x->preserve_mode = on_off;
           x->preserve_timestamps = on_off;
+          x->preserve_ptime = on_off;
           x->preserve_ownership = on_off;
           x->preserve_links = on_off;
           x->explicit_no_preserve_mode = !on_off;
@@ -1076,6 +1097,7 @@ main (int argc, char **argv)
           x.preserve_ownership = true;
           x.preserve_mode = true;
           x.preserve_timestamps = true;
+          x.preserve_ptime = true;
           x.require_preserve = true;
           if (selinux_enabled)
              x.preserve_security_context = true;
@@ -1156,6 +1178,7 @@ main (int argc, char **argv)
           x.preserve_ownership = true;
           x.preserve_mode = true;
           x.preserve_timestamps = true;
+          x.preserve_ptime = true;
           x.require_preserve = true;
           break;
 

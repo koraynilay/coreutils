@@ -8933,6 +8933,8 @@ On older systems, it is not possible to preserve these attributes
 when the affected file is a symbolic link.
 However, many systems now provide the @code{utimensat} function,
 which makes it possible even for symbolic links.
+@item ptime
+Preserve the provenance timestamp, when possible.
 @item links
 Preserve in the destination files
 any links between corresponding source files.
@@ -12633,6 +12635,8 @@ The valid @var{format} directives for files with @option{--format} and
 @item %T -- Minor device type in hex (see below)
 @item %u -- User ID of owner
 @item %U -- User name of owner
+@item %p -- Time of file provenance, or @samp{-} if unknown
+@item %P -- Time of file provenance as seconds since Epoch, or @samp{0}
 @item %w -- Time of file birth, or @samp{-} if unknown
 @item %W -- Time of file birth as seconds since Epoch, or @samp{0}
 @item %x -- Time of last access
